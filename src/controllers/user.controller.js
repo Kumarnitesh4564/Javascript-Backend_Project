@@ -4,6 +4,22 @@ import { User } from "../models/user.models.js";
 import { uploadOnCloudinary } from "../utils/cloudinary.js";
 import { ApiResponse } from "../utils/ApiResponse.js";
 
+const generateAccessTokenAndRefreshToken = async (userId) => {
+    try {
+        const user = await User.findById(userId);
+        const accessToken = user.generateAccessToken();
+        const refreshToken = user.generateRefreshToken();
+
+        user.refreshToken = refreshToken;
+
+        await user.save({ validateBeforeSave: false });
+
+        return { accessToken, refreshToken };
+
+    } catch (error) {
+        throw new ApiError(500, "Error while generating tokens");
+    }
+}
 
 const registerUser = asyncHandler(async (req, res) => {
     // get user details from frontend
@@ -99,5 +115,100 @@ const registerUser = asyncHandler(async (req, res) => {
     
 });
 
+const loginUser = asyncHandler(async (req, res) => {
+    // get user details from frontend
+    // username and email both should be allowed for login, so check if user is trying to login with email or username.
+    //// validate user details - not empty, email should be in correct format, etc
+   // // check if user login with email or username, find user in database.
+    // find user in database by email or username.
+    // if user not found, send error response.
+    // if user found, compare password with hashed password in database.
+    // if password does not match, send error response.
+    // if password matches, generate access token and refresh token.
+    // save refresh token in database for the user.
+    // send success response with access token and user details (except password and refresh token).
 
-export { registerUser }
+    const {email, username, password} = req.body;
+
+    console.log("email:", email);
+    console.log("username:", username); 
+
+    if(!username && !email) {
+        throw new ApiError(400, "Email or username is required for login");
+    }
+
+    const user =await User.findOne({
+        $or: [ { email },{ username } ]
+  });
+
+  if(!user) {
+    throw new ApiError(404, "User not found with this email or username");
+  }
+
+  const isPasswordMatched = await user.comparePassword(password);
+
+  if(!isPasswordMatched) {
+    throw new ApiError(401, "Invalid password");
+  }
+
+  const { accessToken, refreshToken } = await generateAccessTokenAndRefreshToken(user._id);
+
+  const loggedInUser  = await User.findById(user._id).select("-password -refreshToken")
+
+  const options = {
+    httpOnly: true,
+    secure: true
+  }
+
+  res
+  .status(200)
+  .cookie("accessToken", accessToken, options)
+  .cookie("refreshToken", refreshToken, options)
+  .json(
+    new ApiResponse(
+        200,
+        {
+            user: loggedInUser,
+            accessToken, 
+            refreshToken
+        },
+        "User logged in successfully"
+    )
+  )
+
+})
+
+const logoutUser = asyncHandler(async (req, res) => {
+    await User.findByIdAndUpdate(
+        await User.findOneAndUpdate(
+            { _id: userId },
+            { refreshToken },
+            { returnDocument: "after" }
+        )
+    )
+
+    const options = {
+        httpOnly: true,
+        secure: true
+    }
+
+    res
+    .status(200)
+    .clearCookie("accessToken", options)
+    .clearCookie("refreshToken", options)
+    .json(
+        new ApiResponse(
+            200,
+            null,
+            "User logged out successfully"
+        )
+    )
+
+});
+
+
+export { 
+    registerUser,
+    loginUser,
+    logoutUser
+ }
