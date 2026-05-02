@@ -45,10 +45,12 @@ const registerUser = asyncHandler(async (req, res) => {
 
     
 
-    if( 
-        [fullName, email, password, username].some(field => (field.trim() === ""))
+    if (
+        [fullName, email, password, username].some(
+            field => !field || field.trim() === ""
+        )   
     ) {
-        throw new  ApiError(400, "All fields are required");
+    throw new ApiError(400, "All fields are required");
     }
 
     const existedUser = await User.findOne({
@@ -180,11 +182,15 @@ const loginUser = asyncHandler(async (req, res) => {
 
 const logoutUser = asyncHandler(async (req, res) => {
     await User.findByIdAndUpdate(
-        await User.findOneAndUpdate(
-            { _id: userId },
-            { refreshToken },
-            { returnDocument: "after" }
-        )
+        req.user._id,
+        {
+            $unset: {
+                refreshToken: 1 // this removes the field from document
+            }
+        },
+        {
+            new: true
+        }
     )
 
     const options = {
@@ -211,6 +217,8 @@ const refreshAccessToken = asyncHandler(async (req, res) => {
     if(!incomingRefreshToken) {
         throw new ApiError(401, "unauthorize request")
     }
+
+    console.log("Incoming Refresh Token: ", incomingRefreshToken);
 
     try {
         const decodedToken = jwt.verify(
@@ -252,7 +260,7 @@ const refreshAccessToken = asyncHandler(async (req, res) => {
     }
 });
 
-const changeCurrentPassword = asyncHandle(async (req, res) => {
+const changeCurrentPassword = asyncHandler(async (req, res) => {
     const { currentPassword, newPassword, confirmPassword } = req.body;
 
     if(newPassword !== confirmPassword) {
@@ -273,7 +281,7 @@ const changeCurrentPassword = asyncHandle(async (req, res) => {
 
     user.password = newPassword;
 
-    await user.save(validateBeforeSave = false);
+    await user.save({validateBeforeSave : false});
 
     res.status(200).json(
         new ApiResponse(
